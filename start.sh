@@ -5,4 +5,5 @@ rootCA=AmazonRootCA3.pem
 cert=cb11952a43-certificate.pem.crt
 key=cb11952a43-private.pem.key
 
-python3 mainLoop.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --topic sensor/+/gateway --client-id RPI-GW-01
+python3 mainLoop.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --topic "sensors/+/gateway" --client-id "RPI-GW-01"
+#python3 pubsub.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --topic "sensor/+/gateway" --client-id RPI-GW-01

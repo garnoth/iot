@@ -77,7 +77,7 @@ ACTION_ON_TERMINATION = ""
 
 
 SUB_TOPIC = f"sensors/+/{DEVICE_NAME}"
-print("subbing to: " + SUB_TOPIC)
+print(SUB_TOPIC)
 
 # Callback when connection is accidentally lost.
 def on_connection_interrupted(connection, error, **kwargs):
@@ -123,11 +123,11 @@ def receive_loop(topic, payload, **kwargs):
         parsed_topic = topic.split("/")        
         if len(parsed_topic) == 3:            
             # this topic has the correct format
+            # the only root topic supported is sensors/ and only parse if this is for me
             if (parsed_topic[0] == 'sensors') and (parsed_topic[2] == DEVICE_NAME):
                 # a thing is a sensor,actuator,information or command 
                 thing = parsed_topic[1]
                 payloadJson = json.loads(payload)
-                # the only root topic supported is sensor/ and only parse if this is for me
                 if thing == 'temp' or 'humidity' or 'altitude' or 'pressure':
                     print("Received weather sensor request: {}".format(payload))
                     topic_parsed = True
@@ -145,12 +145,15 @@ def receive_loop(topic, payload, **kwargs):
                     topic_parsed = True
                     parseInfo(topic, payloadJson)
                 elif (thing == 'cmd'):
-                    print("Received command request: {}".format(payload))
-                    topic_parsed = True
-                    parseCmd(topic, payloadJson)
-
+                    print("received command request: {}".format(payload))
+                    topic_parsed = true
+                    parseCMD(topic, payloadjson)
+                elif (thing == 'bulk'):
+                    print("received bulk request: {}".format(payload))
+                    topic_parsed = true
+                    parseBulk(topic, payloadjson)
     if not topic_parsed:
-        print("Unrecognized message topic or sensor type")
+        print("Debug: Unrecognized message topic or sensor type, or it's my previous msg")
 
 ## because these 4 sensor readings all come from the same device, we will handle them
 ## from the same function
@@ -159,18 +162,18 @@ def parseSensor(topic, payload, thing):
     msg = {}
     if 'get' in payload:
         if payload['get'] == "status":
-        # TODO check the sensor status, is it on or off
+            # TODO check the sensor status, is it on or off
             print('fart')
-        
+
         if payload['get'] == "value":
             if thing == 'temp':
-                msg[thing] = ws.bme280.temperature
+                msg = getTemp()
             elif thing == 'humidity':
-                msg[thing] = ws.bme280.relative_humidity
+                msg = getHumidity()
             elif thing == 'altitude':
-                msg[thing] = ws.bme280.altitude
+                msg = getAltitude()
             elif thing == 'pressure':
-                msg[thing] = ws.bme280.pressure
+                msg = getPressure()
         ## TODO create and query a device status object?
     if 'set' in payload:
         if payload['set'] == 'off':
@@ -180,12 +183,42 @@ def parseSensor(topic, payload, thing):
         elif payload['set'] == 'on':
             ## todo turn the sensor on
             msg['status'] == 'on'
-    
+
     if msg: # check if the message is not empty
-        print("We filled in some value:", msg)
+        print("Debug filled in some value:", msg)
         composeMessage(topic, msg)
     else: 
         print("ERROR: bad request for sensor")
+
+def getBulk(topic):
+    msg = {}
+    msg.append(getTemp())
+    msg.append(getHumidity())
+    msg.append(getAltitude())
+    msg.append(getPressure())
+    # TODO add more
+    if msg:
+        composeMessage(topic, msg)
+
+def getTemp():
+    msg = {}
+    msg['temp'] = ws.bme280.temperature
+    return msg
+
+def getHumidity():
+    msg = {}
+    msg['humidity'] = ws.bme280.relative_humidity
+    return msg
+
+def getAltitude():
+    msg = {}
+    msg['altitude'] = ws.bme280.altitude
+    return msg
+
+def getPressure():
+    msg = {}
+    msg['humidity'] = ws.bme280.pressure
+    return msg
 
 def parseSoilHumidity(topic, payload):
     print('stub')
@@ -205,11 +238,11 @@ def parseCmd(topic, payload):
         elif payload['deviceState'] == 'reboot':
             CONNECTED = False
             ACTION_ON_TERMINATION = 'reboot'
-            
+
 
 
 def composeMessage(topic, msg):
- #   global mutex
+    #   global mutex
   #  mutex.acquire()
     OUTBOX.append(SensorMessage(topic, msg))
 #    mutex.release()
@@ -283,7 +316,8 @@ if __name__ == '__main__':
     print("Subscribing to topic '{}'...".format(SUB_TOPIC))
     subscribe_future, packet_id = mqtt_connection.subscribe(
             topic=SUB_TOPIC,
-            qos=mqtt.QoS.AT_LEAST_ONCE,
+            #qos=mqtt.QoS.AT_LEAST_ONCE,
+            qos=mqtt.QoS.AT_MOST_ONCE,
             callback=receive_loop)
 
     subscribe_result = subscribe_future.result()
@@ -292,16 +326,16 @@ if __name__ == '__main__':
 
     publish_count = 1
     # publish a message saying we are online
-
     while CONNECTED:
         ## TODO implement bailout routine for graceful termination message
         if OUTBOX:
             msg = OUTBOX.popleft()
             ## we have an item
             print("Publishing message to topic '{}': {}".format(msg.getTopic(), msg.getMessage() ))
+            print("topic:",msg.getTopic())
             mqtt_connection.publish(
                     topic=msg.getTopic(),
-                    payload=msg.getMessage(),
+                    payload=json.dumps(msg.getMessage()), # don't forget to convert to binary before sending
                     qos=mqtt.QoS.AT_LEAST_ONCE)
             publish_count += 1
         else:
