@@ -17,6 +17,7 @@ import weatherSensor as ws
 import json
 import lights as led
 import soilHumidity as soil
+import waterController as water
 
 class SensorMessage:
     def __init__(self, topic, message):
@@ -28,6 +29,8 @@ class SensorMessage:
     def getMessage(self):
         return self.message
 
+def startTaskRoutine():
+    print('fart')
 
 # This sample uses the Message Broker for AWS IoT to send and receive messages
 # through an MQTT connection. On startup, the device connects to the server,
@@ -65,6 +68,7 @@ args = parser.parse_args()
 
 io.init_logging(getattr(io.LogLevel, args.verbosity), 'stderr')
 
+global received_count
 received_count = 0
 received_all_event = threading.Event()
 #mutex = threading.Lock()
@@ -72,32 +76,37 @@ OUTBOX = deque() # create a linked list to handle messages for sensor readings t
 
 ## the certificate name doesn't quite match our MQTT name
 ## Edit this for each device
+# TODO set these via the commandline args
+global DEVICE_NAME
 DEVICE_NAME = 'gateway'
-
+REPORTING_TIME = 3600 # default to 1 hour in seconds
 global CONNECTED
+WATERING_TIME_SEC = 8 # the default ammount of time to water
 
 ACTION_ON_TERMINATION = ""
-
-global SYSTEM_RUNNING
 
 SUB_TOPIC = f"sensors/+/{DEVICE_NAME}"
 print(SUB_TOPIC)
 
+print("Starting up sensor sub-systems")
 ledEvent = threading.Event()
 waterEvent = threading.Event()
-soilEvent = threading.Event()
+#tasksEvent = threading.Event()
 
 ledObj = led.ledManager(ledEvent)
-waterObj = water.waterManager(waterEvent)
-soilObj = soil.soilManager(soilEvent)
+waterObj = water.waterManager(waterEvent, WATERING_TIME_SEC)
+soilObj = soil.soilManager()
+#tasksOjb = task.taskManager()
 
 ledThread = threading.Thread(name='LED subsystem', target=ledObj.start)
 waterThread = threading.Thread(name='Water subsystem', target=waterObj.start)
-soilThread = threading.Thread(name='Soil subsystem', target=soilObj.start)
+#soilThread = threading.Thread(name='Soil subsystem', target=soilObj.start)
+#tasksThread = threading.Thread(name='Task reporting subsystem', target=startTaskRoutine, args =(REPORTING_TIME,))
 
 ledThread.start()
-WaterThread.start()
-SoilThread.start()
+waterThread.start()
+#tasksThread.start()
+print("All sensor sub-systems started")
 
 # Callback when connection is accidentally lost.
 def on_connection_interrupted(connection, error, **kwargs):
@@ -125,54 +134,64 @@ def on_resubscribe_complete(resubscribe_future):
         if qos is None:
             sys.exit("Server rejected resubscribe to topic: {}".format(topic))
 
+
 ## my code starts here ##
-
-
 
 # Callback when the subscribed topic receives a message
 def receive_loop(topic, payload, **kwargs):
-    print("Received message from topic '{}': {}".format(topic, payload))
     global received_count
-    global DEVICE_NAME
+    print("Received message from topic '{}': {}".format(topic, payload))
     received_count += 1
-    if received_count == args.count:
-        received_all_event.set()
+
+
+    #if received_count == args.count:
+     #   received_all_event.set()
 
     topic_parsed = False    
     if "/" in topic:        
         parsed_topic = topic.split("/")        
         if len(parsed_topic) == 3:            
             # this topic has the correct format
-            # the only root topic supported is sensors/ and only parse if this is for me
-            if (parsed_topic[0] == 'sensors') and (parsed_topic[2] == DEVICE_NAME):
-                # a thing is a sensor,actuator,information or command 
-                thing = parsed_topic[1]
-                print('debug: parsing: ',thing)
-                payloadJson = json.loads(payload)
-                if thing == 'temp' or thing == 'humidity' or thing == 'altitude' or thing == 'pressure':
-                    # all of these sensors are on the same sensor device
-                    print("Received weather sensor request: {}".format(payload))
-                    parseSensor(topic, payloadJson, thing)
-                elif thing == 'soilHumidity': # soil humidity sensor module
-                    print("Received soil humidity request: {}".format(payload))
-                    parseSoil(topic, payloadJson)
-                elif thing == 'watering': # watering module
-                    print("Received watering request: {}".format(payload))
-                    parseWater(topic, payloadJson)
-                elif thing == 'led': # module to contol LED blinking
-                    print("Received light request: {}".format(payload))
-                    parseLight(topic, payloadJson)
-                elif thing == 'info': # various sensor infos? TODO: needed?
-                    print("Received info request: {}".format(payload))
-                    parseInfo(topic, payloadJson)
-                elif thing == 'cmd': # the sensor receives system commands here
-                    print("received command request: {}".format(payload))
-                    parseCommand(topic, payloadJson)
-                elif thing == 'bulk': # request or publish bulk sensor readings
-                    print("received bulk request: {}".format(payload))
-                    parseBulk(topic, payloadJson)
-        
+                # the only root topic supported is sensors/ and only parse if this is for me
+                if (parsed_topic[0] == 'sensors') and (parsed_topic[2] == DEVICE_NAME):
+                    # a thing is a sensor,actuator,information or command 
+                    thing = parsed_topic[1]
+                    print('Debug: parsing: ',thing)
+                    payloadJson = json.loads(payload)
+                    if thing == 'temp' or thing == 'humidity' or thing == 'altitude' or thing == 'pressure':
+                        # all of these sensors are on the same sensor device
+                        print("Received weather sensor request: {}".format(payload))
+                        parseSensor(topic, payloadJson, thing)
+                        topic_parsed = True
+                    elif thing == 'soilHumidity': # soil humidity sensor module
+                        print("Received soil humidity request: {}".format(payload))
+                        parseSoil(topic, payloadJson)
+                        topic_parsed = True
+                    elif thing == 'water': # watering module
+                        print("Received watering request: {}".format(payload))
+                        parseWater(topic, payloadJson)
+                        topic_parsed = True
+                    elif thing == 'led': # module to contol LED blinking
+                        print("Received light request: {}".format(payload))
+                        parseLight(topic, payloadJson)
+                        topic_parsed = True
+                    elif thing == 'info': # various sensor infos? TODO: needed?
+                        print("Received info request: {}".format(payload))
+                        parseInfo(topic, payloadJson)
+                        topic_parsed = True
+                    elif thing == 'cmd': # the sensor receives system commands here
+                        print("received command request: {}".format(payload))
+                        parseCommand(topic, payloadJson)
+                        topic_parsed = True
+                    elif thing == 'bulk': # request or publish bulk sensor readings
+                        print("received bulk request: {}".format(payload))
+                        parseBulk(topic, payloadJson)
+                        topic_parsed = True
+    if not topic_parsed:
         print("Debug: Unrecognized message topic or sensor type, or it's my previous msg")
+
+## Command parsing and validating function ##
+#############################################
 
 ## because these 4 sensor readings all come from the same device, we will handle them
 ## from the same function
@@ -209,13 +228,100 @@ def parseSensor(topic, payload, thing):
     else: 
         print("ERROR: bad request for sensor")
 
+# check and see the we have recieved a valid request for the soil humidity sensor
+def parseSoil(topic, payload):
+    msg = {}
+    if 'set' in payload:
+        if payload['set'] == 'on' or payload['set'] == 'off':
+            msg['status'] = 'ActionDenied'
+
+    if 'get' in payload:
+        if payload['get'] == 'value':
+            msg = getSoilHumidity()
+    if msg:
+        composeMessage(topic, msg)
+
+# parse the request or command for the water module
+def parseWater(topic, payload):
+    msg = {}
+    if 'set' in payload:
+        action = payload['set']
+        # this just triggers the system to water for a pre-determined amount of time for now
+        if action == 'on':
+            waterEvent.set()
+            msg['status'] = 'on'
+        
+        # TODO, we can't interrupt the hose right now
+        elif action == 'off':
+            #waterEvent.clear()
+            msg['status'] = 'ActionDenied'
+
+        ## clear resets the water systems current total counter for seconds watered
+        elif action == 'clear':
+            msg = clearWaterCounter()
+
+    if 'get' in payload:
+        action = payload['get']
+        if action == 'status' or action == 'state':
+            msg = getWaterState()
+        elif action == 'cumulative':
+            msg = getWaterCumulativeTotal()
+        elif action == 'total':
+            msg = getWaterCurrentTotal()
+    
+    if msg:
+        composeMessage(topic, msg)
+
+# handles the led and informs LED thread if it should blink or not
+# the current behavior for 'on' means blink. We could add in function to keep
+# led steady and not just blink, optional
+def parseLight(topic, payload):
+    msg = {}
+    if 'set' in payload:
+        if payload['set'] == 'on':
+            ledEvent.set()
+            msg['status'] = 'on'
+        elif payload['set'] == 'off':
+            ledEvent.clear()
+            msg['status'] = 'off'
+
+    if 'get' in payload:
+        if payload['get'] == 'status':
+            msg = getLEDStatus()
+    if msg:
+        composeMessage(topic, msg)
+
+
+def parseInfo(topic, payload):
+    print('stub')
+
+def parseCommand(topic, payload):
+    msg = {}
+    global ACTION_ON_TERMINATION
+    if 'deviceState' in payload:
+        if payload['deviceState'] == 'off':
+            msg['status'] = 'shutting down'
+            disconnectLoop()
+        elif payload['deviceState'] == 'reboot':
+            msg['status'] = 'rebooting'
+            disconnectLoop()
+            ACTION_ON_TERMINATION = 'reboot'
+    if msg:
+        composeMessage(topic, msg)
+
+## Sensor data retrieval functions ## 
+#####################################
+
+## this function gathers all availble sensor data and device status information and sends in one
+## pre-formatted message
 def getBulk(topic):
     msg = {}
     msg.append(getTemp())
     msg.append(getHumidity())
     msg.append(getAltitude())
     msg.append(getPressure())
-    msg.append(getLEDStatus()))
+    msg.append(getLEDStatus())
+    msg.append(getSoilHumidity())
     if msg:
         composeMessage(topic, msg)
 
@@ -239,95 +345,48 @@ def getPressure():
     msg['humidity'] = ws.bme280.pressure
     return msg
 
-# soil humidity sensor doesn't take on or off settings because if the user leaves the sensor on,
-# it will damage the sensor in just a few days. It will corrode itself. So the module takes care of turning itself
-# on or off and we will only provide readings
-def parseSoil(topic, payload):
-    msg = {}
-    if 'set' in payload:
-        if payload['set'] == 'on' or payload['set'] == 'off':
-            msg['status'] = 'ActionDenied'
-
-    if 'get' in payload:
-        if payload['get'] == 'value':
-        msg = getSoilHumidity()
-    if msg:
-        composeMessage(topic, msg)
-
-def parseWater(topic, payload):
-    msg = {}
-    if 'set' in payload:
-        if payload['set'] == 'on':
-            ledEvent.set()
-            msg['status'] = 'on'
-        elif payload['set'] == 'off':
-            ledEvent.clear()
-            msg['status'] = 'off'
-
-    if 'get' in payload:
-        if payload['get'] == 'status':
-        msg = getLEDStatus()
-    if msg:
-        composeMessage(topic, msg)
-
-
-# handles the led and informs LED thread if it should blink or not
-# the current behavior for 'on' means blink. We could add in function to keep
-# led steady and not just blink, optional
-def parseLight(topic, payload):
-    msg = {}
-    if 'set' in payload:
-        if payload['set'] == 'on':
-            ledEvent.set()
-            msg['status'] = 'on'
-        elif payload['set'] == 'off':
-            ledEvent.clear()
-            msg['status'] = 'off'
-
-    if 'get' in payload:
-        if payload['get'] == 'status':
-        msg = getLEDStatus()
-    if msg:
-        composeMessage(topic, msg)
-
 def getLEDStatus():
     msg = {}
     state = "on" if ledEvent.isSet() else 'off'
     msg['status'] = state
     return msg
 
-## IP
+# this function reports the soil humidity value
+# the soil humidity class and getSoilHumidity() function manages it's own power-state 
+# because leaving it on will damange the sensor, so the state cannot be set by the user
 def getSoilHumidity():
     msg = {}
-    soilEvent.set()
-    msg['value'] = reading
+    msg['value'] = soilObj.getSoilHumidity() 
     return msg
 
+def clearWaterCounter():
+    waterObj.clearRuntime()
+    return getWaterCurrentTotal()
 
-def parseInfo(topic, payload):
-    print('stub')
-
-def parseCommand(topic, payload):
+# this returns the number of seconds that the water system has been open since it was last cleared
+def getWaterCurrentTotal():
     msg = {}
-    global ACTION_ON_TERMINATION
-    if 'deviceState' in payload:
-        if payload['deviceState'] == 'off':
-            msg['status'] = 'shutting down'
-            disconnectLoop()
-        elif payload['deviceState'] == 'reboot':
-            msg['status'] = 'rebooting'
-            disconnectLoop()
-            ACTION_ON_TERMINATION = 'reboot'
-    if msg:
-        composeMessage(topic, msg)
-    
+    msg['current total'] = waterObj.getCurrentTotal()
+    return msg
 
+# this return the number of seconds that the water system has been open since the device came online
+def getWaterCumulativeTotal():
+    msg = {}
+    msg['cumulative total'] = waterObj.getTotalRuntime() 
+    return msg
 
+def getWaterState():
+    msg = {}
+    state = 'water on' if waterObj.getState() else 'water off'
+    msg['status'] = state
+    return msg
+
+## Misc commands section ##
+###########################
+
+# Appends a message to the outbox queue which will be sent later by the main loop
 def composeMessage(topic, msg):
-    #   global mutex
-  #  mutex.acquire()
     OUTBOX.append(SensorMessage(topic, msg))
-#    mutex.release()
 
 ## system functions
 # define a custom function to query unique system information
@@ -347,10 +406,13 @@ def disconnectLoop():
     global CONNECTED
     CONNECTED=False
 
+##  #//# ## 
+#   Main  #
+##  #//# ##
 if __name__ == '__main__':
-##    global SYSTEM_RUNNING     
     # Spin up resources
-    global CONNECTED
+    #CONNECTED
+    #received_count
     event_loop_group = io.EventLoopGroup(1)
     host_resolver = io.DefaultHostResolver(event_loop_group)
     client_bootstrap = io.ClientBootstrap(event_loop_group, host_resolver)
@@ -410,7 +472,6 @@ if __name__ == '__main__':
 
     publish_count = 1
     # publish a message saying we are online
-    #while SYSTEM_RUNNING and CONNECTED:
     while CONNECTED:
         if OUTBOX:
             msg = OUTBOX.popleft()
@@ -443,11 +504,15 @@ if __name__ == '__main__':
     ## Clean up area ##
     ledObj.terminate()
     waterObj.terminate()
-    soilObj.terminate()
-    
+    soilObj.terminate() # is the needed?
+
     ledThread.join() # LED thread finish
     waterThread.join() # Water thread finish
-    soilThread.join() # Soil thread finish
-    
+    #tasksThread.join() # Tasks thread finish
+
+    ## only works if script run a root
     if ACTION_ON_TERMINATION == 'reboot':
         os.system("reboot")
+
+
+
