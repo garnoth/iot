@@ -212,7 +212,6 @@ def parseSensor(topic, payload, thing):
                 msg = getAltitude()
             elif thing == 'pressure':
                 msg = getPressure()
-        ## TODO create and query a device status object?
     if 'set' in payload:
         if payload['set'] == 'off':
             ## todo turn the sensor off
@@ -226,7 +225,7 @@ def parseSensor(topic, payload, thing):
         print("Debug filled in some value:", msg)
         composeMessage(topic, msg)
     else: 
-        print("ERROR: bad request for sensor")
+        print("Debug: ignored request for weather sensor")
 
 # check and see the we have recieved a valid request for the soil humidity sensor
 def parseSoil(topic, payload):
@@ -251,14 +250,17 @@ def parseWater(topic, payload):
             waterEvent.set()
             msg['status'] = 'on'
         
-        # TODO, we can't interrupt the hose right now
         elif action == 'off':
-            #waterEvent.clear()
-            msg['status'] = 'ActionDenied'
+            # interrupt the hose and tell it to shut-off
+            msg = interruptWater()
 
         ## clear resets the water systems current total counter for seconds watered
         elif action == 'clear':
             msg = clearWaterCounter()
+
+        # set a different watering time
+        elif action == 'time':
+            msg = setWateringTime()
 
     if 'get' in payload:
         action = payload['get']
@@ -268,6 +270,10 @@ def parseWater(topic, payload):
             msg = getWaterCumulativeTotal()
         elif action == 'total':
             msg = getWaterCurrentTotal()
+        
+        # get the current watering time in seconds
+        elif action == 'time':
+            msg = getWateringTime()
     
     if msg:
         composeMessage(topic, msg)
@@ -375,11 +381,38 @@ def getWaterCumulativeTotal():
     msg['cumulative total'] = waterObj.getTotalRuntime() 
     return msg
 
+# this can inform the user if the hose is open or closed
 def getWaterState():
     msg = {}
     state = 'water on' if waterObj.getState() else 'water off'
     msg['status'] = state
     return msg
+
+def getWateringTime():
+    msg = {}
+    value = waterObj.getWateringTime()
+    msg['watering time'] = value
+    return msg
+
+# user can request the hose be turned off
+def interruptWater():
+    msg = {}
+    if waterObj.getState():
+        # it's currently on, interrupt it
+        waterObj.interruptHose()
+        msg['status'] = 'water interrupted'
+    else:
+        # the water hose isn't currently on
+        msg['status'] = 'water already off'
+    return msg
+
+# request to change the water system's time in seconds that the hose is on for
+def setWateringTime(value):
+    msg = {}
+    value = waterObj.changeWateringTime(value)
+    msg['watering time'] = value
+    return msg
+
 
 ## Misc commands section ##
 ###########################
@@ -389,16 +422,16 @@ def composeMessage(topic, msg):
     OUTBOX.append(SensorMessage(topic, msg))
 
 ## system functions
-# define a custom function to query unique system information
+
+# returns a formatted (system) uptime value for this device
 def getSystemUptime():
     return "{:0>8}".format(str(timedelta(seconds=int(uptime()))))
 
-
-def reportUptime(topic, msg):
+ 
+def getUptime(topic, msg):
     msg = {}
     msg['uptime'] = getSystemUptime()
-    if msg: # might be pointless here but useful to check if changes are made later
-        composeMessage(topic, msg)
+    return msg
 
 # function to set the global loop variable to false so we exit out
 def disconnectLoop():
@@ -406,13 +439,10 @@ def disconnectLoop():
     global CONNECTED
     CONNECTED=False
 
-##  #//# ## 
-#   Main  #
-##  #//# ##
+## Main ##
+##########
 if __name__ == '__main__':
     # Spin up resources
-    #CONNECTED
-    #received_count
     event_loop_group = io.EventLoopGroup(1)
     host_resolver = io.DefaultHostResolver(event_loop_group)
     client_bootstrap = io.ClientBootstrap(event_loop_group, host_resolver)

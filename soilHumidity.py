@@ -10,7 +10,7 @@ from adafruit_ads1x15.analog_in import AnalogIn
 CEILING = 14000
 FLOOR = 25000
 
-SOIL_POWER_PIN = 12  # the choses GPIO pin for controlling the water valve
+SOIL_POWER_PIN = 12  # the GPIO pin for controlling power to the soil moisture sensor
 
 GPIO.setwarnings(False)    # Ignore warning for now
 GPIO.setup(SOIL_POWER_PIN, GPIO.OUT, initial=GPIO.LOW)   # Set GPIO PIN 12 to be the output pin and set it LOW by default
