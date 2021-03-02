@@ -4,7 +4,7 @@ import threading
 
 #GPIO.setmode(GPIO.BCM) # only need to set for testing
 
-LED_PIN = 21  # the choses GPIO pin for blinking our LED
+LED_PIN = 21  # the choses GPIO 21/physical pin 40, for blinking our LED
 GPIO.setwarnings(False)    # Ignore warning for now
 #GPIO.setmode(GPIO.BOARD)   # Use physical pin numbering
 GPIO.setup(LED_PIN, GPIO.OUT, initial=GPIO.LOW)   # Set pin 40 to be the output pin and set it LOW by default

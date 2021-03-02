@@ -66,8 +66,9 @@ class waterManager:
     def changeWateringTime(self, value):
         if value > 0 and value < MAX_WATERING_TIME_SEC:
             # the user has requested a reasonable time change
+            # but don't change the watering time if watering is in progress
             self.mutexA.acquire()
-            self.wateringTime = time
+            self.wateringTime = value
             self.mutexA.release()
 
         # else: nothing changes and we return the current value anyways 

@@ -10,14 +10,14 @@ from adafruit_ads1x15.analog_in import AnalogIn
 CEILING = 14000
 FLOOR = 25000
 
-SOIL_POWER_PIN = 12  # the GPIO pin for controlling power to the soil moisture sensor
+SOIL_POWER_PIN = 16  # the GPIO pin for controlling power to the soil moisture sensor
 
 GPIO.setwarnings(False)    # Ignore warning for now
-GPIO.setup(SOIL_POWER_PIN, GPIO.OUT, initial=GPIO.LOW)   # Set GPIO PIN 12 to be the output pin and set it LOW by default
+GPIO.setup(SOIL_POWER_PIN, GPIO.OUT, initial=GPIO.LOW)   # Set GPIO PIN 16 to be the output pin and set it LOW by default
 
 
 TIMEOUT = 3
-WAIT_TIME = 2 # time to wait for soil chip to come online
+WAIT_TIME = 1 # time to wait for soil chip to come online
 class soilManager:
     def __init__(self):
         self.running = True
@@ -37,7 +37,7 @@ class soilManager:
     def terminate(self):
         self.running = False
 
-    def __getPercentHumidity(reading):
+    def getPercentHumidity(self, reading):
         ## this is a little confusing because we are using negative numbers because higher values
         ## means more resistance which means it's less humid so we need to invert our percentage range
         if reading > FLOOR:
@@ -58,8 +58,8 @@ class soilManager:
         GPIO.output(SOIL_POWER_PIN, GPIO.HIGH) # Turn on and wait for sensor
         sleep(WAIT_TIME) 
         # TODO what happens if the channel reading is bad, catch errors here and provide meaningful response
-        self.soilValue = __getPercentHumidity(self.chan.value) 
-        #print("{:.2f}".format(round(self.soilValue, 2)))
+        self.soilValue = self.getPercentHumidity(self.chan.value) 
+        print("debug:{:.2f}".format(round(self.soilValue, 2)))
 
         GPIO.output(SOIL_POWER_PIN, GPIO.LOW) # Turn off
         self.mutex.release()

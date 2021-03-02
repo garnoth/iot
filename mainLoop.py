@@ -77,15 +77,17 @@ OUTBOX = deque() # create a linked list to handle messages for sensor readings t
 ## the certificate name doesn't quite match our MQTT name
 ## Edit this for each device
 # TODO set these via the commandline args
-global DEVICE_NAME
-DEVICE_NAME = 'gateway'
+
 REPORTING_TIME = 3600 # default to 1 hour in seconds
 global CONNECTED
 WATERING_TIME_SEC = 8 # the default ammount of time to water
 
+# the list of supported actions we support
+SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
+
 ACTION_ON_TERMINATION = ""
 
-SUB_TOPIC = f"sensors/+/{DEVICE_NAME}"
+SUB_TOPIC = f"sensors/+/{args.client_id}"
 print(SUB_TOPIC)
 
 print("Starting up sensor sub-systems")
@@ -136,6 +138,10 @@ def on_resubscribe_complete(resubscribe_future):
 
 
 ## my code starts here ##
+def supportedAction(payload):
+    action = list(payload.keys())[0]
+    # Since we only support single key + value commands, just check the first item, if it's a supported command then return true
+    return action in SUPPORTED_ACTIONS
 
 # Callback when the subscribed topic receives a message
 def receive_loop(topic, payload, **kwargs):
@@ -153,40 +159,39 @@ def receive_loop(topic, payload, **kwargs):
         if len(parsed_topic) == 3:            
             # this topic has the correct format
                 # the only root topic supported is sensors/ and only parse if this is for me
-                if (parsed_topic[0] == 'sensors') and (parsed_topic[2] == DEVICE_NAME):
+                if (parsed_topic[0] == 'sensors') and (parsed_topic[2] == args.client_id):
                     # a thing is a sensor,actuator,information or command 
                     thing = parsed_topic[1]
-                    print('Debug: parsing: ',thing)
+                    #print('Debug: parsing: ',thing)
                     payloadJson = json.loads(payload)
-                    if thing == 'temp' or thing == 'humidity' or thing == 'altitude' or thing == 'pressure':
-                        # all of these sensors are on the same sensor device
-                        print("Received weather sensor request: {}".format(payload))
-                        parseSensor(topic, payloadJson, thing)
-                        topic_parsed = True
-                    elif thing == 'soilHumidity': # soil humidity sensor module
-                        print("Received soil humidity request: {}".format(payload))
-                        parseSoil(topic, payloadJson)
-                        topic_parsed = True
-                    elif thing == 'water': # watering module
-                        print("Received watering request: {}".format(payload))
-                        parseWater(topic, payloadJson)
-                        topic_parsed = True
-                    elif thing == 'led': # module to contol LED blinking
-                        print("Received light request: {}".format(payload))
-                        parseLight(topic, payloadJson)
-                        topic_parsed = True
-                    elif thing == 'info': # various sensor infos? TODO: needed?
-                        print("Received info request: {}".format(payload))
-                        parseInfo(topic, payloadJson)
-                        topic_parsed = True
-                    elif thing == 'cmd': # the sensor receives system commands here
-                        print("received command request: {}".format(payload))
-                        parseCommand(topic, payloadJson)
-                        topic_parsed = True
-                    elif thing == 'bulk': # request or publish bulk sensor readings
-                        print("received bulk request: {}".format(payload))
-                        parseBulk(topic, payloadJson)
-                        topic_parsed = True
+                    # we can filter out our message responses here and skip processing if the request doesn't contain a supported
+                    # action, because it likely is just our own message response
+                    if supportedAction(payloadJson):
+                        if thing == 'temp' or thing == 'humidity' or thing == 'altitude' or thing == 'pressure':
+                            # all of these sensors are on the same sensor device
+                            print("Received weather sensor request: {}".format(payload))
+                            parseSensor(topic, payloadJson, thing)
+                            topic_parsed = True
+                        elif thing == 'soil': # soil humidity sensor module
+                            print("Received soil humidity request: {}".format(payload))
+                            parseSoil(topic, payloadJson)
+                            topic_parsed = True
+                        elif thing == 'water': # watering module
+                            print("Received watering request: {}".format(payload))
+                            parseWater(topic, payloadJson)
+                            topic_parsed = True
+                        elif thing == 'led': # module to contol LED blinking
+                            print("Received light request: {}".format(payload))
+                            parseLight(topic, payloadJson)
+                            topic_parsed = True
+                        elif thing == 'info': # requests for data that might be bigger than a single response
+                            print("Received info request: {}".format(payload))
+                            parseInfo(topic, payloadJson)
+                            topic_parsed = True
+                        elif thing == 'cmd': # the sensor receives system commands here
+                            print("received command request: {}".format(payload))
+                            parseCommand(topic, payloadJson)
+                            topic_parsed = True
     if not topic_parsed:
         print("Debug: Unrecognized message topic or sensor type, or it's my previous msg")
 
@@ -195,15 +200,19 @@ def receive_loop(topic, payload, **kwargs):
 
 ## because these 4 sensor readings all come from the same device, we will handle them
 ## from the same function
-# TODO handle turning on and off the sensor for power saving
+## I tested the power consumption of the weather sensor and it was about 2mA so we don't bother turning 
+## it on an off, it will stay on
 def parseSensor(topic, payload, thing):
     msg = {}
     if 'get' in payload:
-        if payload['get'] == "status":
+        target = payload['get']
+        if target == "status":
             # TODO check the sensor status, is it on or off
-            print('fart')
+            # this would handle error conditions where some of the sensors didn't come
+            # online when the program started. 
+            msg['status'] = 'on'
 
-        if payload['get'] == "value":
+        elif target == "value":
             if thing == 'temp':
                 msg = getTemp()
             elif thing == 'humidity':
@@ -213,16 +222,12 @@ def parseSensor(topic, payload, thing):
             elif thing == 'pressure':
                 msg = getPressure()
     if 'set' in payload:
-        if payload['set'] == 'off':
-            ## todo turn the sensor off
-            print('todo')
-            msg['status'] == 'off'
-        elif payload['set'] == 'on':
-            ## todo turn the sensor on
-            msg['status'] == 'on'
+        action = payload['set']
+        if action == 'off' or action == 'off':
+            # we don't support turning this sensor on/off
+            msg['status'] = 'ActionDenied'
 
     if msg: # check if the message is not empty
-        print("Debug filled in some value:", msg)
         composeMessage(topic, msg)
     else: 
         print("Debug: ignored request for weather sensor")
@@ -231,11 +236,14 @@ def parseSensor(topic, payload, thing):
 def parseSoil(topic, payload):
     msg = {}
     if 'set' in payload:
-        if payload['set'] == 'on' or payload['set'] == 'off':
+        action = payload['set']
+        if action == 'on' or action == 'off':
             msg['status'] = 'ActionDenied'
 
     if 'get' in payload:
-        if payload['get'] == 'value':
+        action = payload['get']
+        if action == 'value' or action == 'status' or action == 'reading':
+            print("getting soil reading")
             msg = getSoilHumidity()
     if msg:
         composeMessage(topic, msg)
@@ -258,9 +266,13 @@ def parseWater(topic, payload):
         elif action == 'clear':
             msg = clearWaterCounter()
 
-        # set a different watering time
-        elif action == 'time':
-            msg = setWateringTime()
+    if 'setTime' in payload:
+        time = payload['setTime'] # the sub-functions check and enforce the validity for int/float values
+        try:
+            time = int(time)
+            msg = setWateringTime(time)
+        except ValueError:
+            print("debug: non-integer value for time")
 
     if 'get' in payload:
         action = payload['get']
@@ -271,7 +283,7 @@ def parseWater(topic, payload):
         elif action == 'total':
             msg = getWaterCurrentTotal()
         
-        # get the current watering time in seconds
+        # get the currently set watering time in seconds
         elif action == 'time':
             msg = getWateringTime()
     
@@ -297,13 +309,22 @@ def parseLight(topic, payload):
     if msg:
         composeMessage(topic, msg)
 
-
+# the Info topic can multisystem responses, in contrast to the rest of the sensor topics
+# which only return a single status
 def parseInfo(topic, payload):
-    print('stub')
+    msg = {}
+    if 'get' in payload:
+        if payload['get'] == 'bulk':
+            msg = getBulk()
+    if msg:
+        composeMessage(topic, msg)
 
 def parseCommand(topic, payload):
     msg = {}
     global ACTION_ON_TERMINATION
+    if 'get' in payload:
+        if payload['get'] == 'uptime':
+            msg = getUptime()
     if 'deviceState' in payload:
         if payload['deviceState'] == 'off':
             msg['status'] = 'shutting down'
@@ -388,10 +409,11 @@ def getWaterState():
     msg['status'] = state
     return msg
 
+# returns the currently set, ammount of time the hose will water for when turned on
 def getWateringTime():
     msg = {}
     value = waterObj.getWateringTime()
-    msg['watering time'] = value
+    msg['watering set for'] = value
     return msg
 
 # user can request the hose be turned off
@@ -409,8 +431,13 @@ def interruptWater():
 # request to change the water system's time in seconds that the hose is on for
 def setWateringTime(value):
     msg = {}
-    value = waterObj.changeWateringTime(value)
-    msg['watering time'] = value
+    ## the sub-process to set new watering time block, this can hang the MQTT connection
+    ## if we don't send a response soon enough, so report an error if watering is in prog
+    if not waterObj.getState():
+        value = waterObj.changeWateringTime(value)
+        msg['watering time'] = value
+    else:
+        msg['notifyWait'] = 'watering currently in-progress'
     return msg
 
 
@@ -428,7 +455,7 @@ def getSystemUptime():
     return "{:0>8}".format(str(timedelta(seconds=int(uptime()))))
 
  
-def getUptime(topic, msg):
+def getUptime():
     msg = {}
     msg['uptime'] = getSystemUptime()
     return msg
