@@ -1,9 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0.
 
-# major modifications made by Peter Van Eenoo
-# for CSS 532 at UW Bothell
-
 import os
 import argparse
 from awscrt import io, mqtt, auth, http
@@ -12,20 +9,19 @@ import sys
 import threading
 import logging
 import time
+from uuid import uuid4
 from collections import deque
 from uptime import uptime
 from datetime import timedelta
 import json
-import weatherSensor as ws
-import lights as led
-import soilHumidity as soil
-import waterController as water
+import stub_weatherSensor as ws
+import stub_lights as led
+import stub_soilHumidity as soil
+import stub_waterController as water
 
 logging.basicConfig(level=logging.DEBUG)
 #logging.basicConfig(level=logging.INFO)
 
-# this simple class holds a message and a topic string
-# we will then create a deque that holds SensorMessages
 class SensorMessage:
     def __init__(self, topic, message):
         self.topic = topic
@@ -36,7 +32,12 @@ class SensorMessage:
     def getMessage(self):
         return self.message
 
-# grab and parse the arguments
+# This sample uses the Message Broker for AWS IoT to send and receive messages
+# through an MQTT connection. On startup, the device connects to the server,
+# subscribes to a topic, and begins publishing messages to that topic.
+# The device should receive those same messages back from the message broker,
+# since it is subscribed to that same topic.
+
 parser = argparse.ArgumentParser(description="Send and receive messages through and MQTT connection.")
 parser.add_argument('--endpoint', required=True, help="Your AWS IoT custom endpoint, not including a port. " +
         "Ex: \"abcd123456wxyz-ats.iot.us-east-1.amazonaws.com\"")
@@ -45,10 +46,12 @@ parser.add_argument('--key', help="File path to your private key, in PEM format.
 parser.add_argument('--root-ca', help="File path to root certificate authority, in PEM format. " +
         "Necessary if MQTT server uses a certificate that's not already in " +
         "your trust store.")
-parser.add_argument('--client-id', default="test-", help="Client ID for MQTT connection.")
+parser.add_argument('--client-id', default="test-" + str(uuid4()), help="Client ID for MQTT connection.")
 parser.add_argument('--topic', default="test/topic", help="Topic to subscribe to, and publish messages to.")
 parser.add_argument('--message', default="Hello World!", help="Message to publish. " +
         "Specify empty string to publish nothing.")
+parser.add_argument('--count', default=10, type=int, help="Number of messages to publish/receive before exiting. " +
+        "Specify 0 to run forever.")
 parser.add_argument('--use-websocket', default=False, action='store_true',
         help="To use a websocket instead of raw mqtt. If you " +
         "specify this option you must specify a region for signing, you can also enable proxy mode.")
@@ -59,6 +62,52 @@ parser.add_argument('--proxy-host', help="Hostname for proxy to connect to. Note
 parser.add_argument('--proxy-port', type=int, default=8080, help="Port for proxy to connect to.")
 parser.add_argument('--verbosity', choices=[x.name for x in io.LogLevel], default=io.LogLevel.NoLogs.name,
         help='Logging level')
+
+# Gloabls area
+args = parser.parse_args()
+
+io.init_logging(getattr(io.LogLevel, args.verbosity), 'stderr')
+
+global received_count
+received_count = 0
+received_all_event = threading.Event()
+#mutex = threading.Lock()
+OUTBOX = deque() # create a linked list to handle messages for sensor readings to send to AWS
+
+## the certificate name doesn't quite match our MQTT name
+## Edit this for each device
+# TODO set these via the commandline args
+
+REPORTING_TIME = 3600 # default to 1 hour in seconds
+global CONNECTED
+WATERING_TIME_SEC = 8 # the default ammount of time to water
+
+# the list of supported actions we support
+SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
+
+ACTION_ON_TERMINATION = ""
+
+SUB_TOPIC = f"sensors/+/{args.client_id}"
+
+logging.info("Starting up sensor sub-systems")
+ledEvent = threading.Event()
+waterEvent = threading.Event()
+#tasksEvent = threading.Event()
+
+ledObj = led.ledManager(ledEvent)
+waterObj = water.waterManager(waterEvent, WATERING_TIME_SEC)
+soilObj = soil.soilManager()
+#tasksOjb = task.taskManager()
+
+ledThread = threading.Thread(name='LED subsystem', target=ledObj.start)
+waterThread = threading.Thread(name='Water subsystem', target=waterObj.start)
+#soilThread = threading.Thread(name='Soil subsystem', target=soilObj.start)
+#tasksThread = threading.Thread(name='Task reporting subsystem', target=startTaskRoutine, args =(REPORTING_TIME,))
+
+ledThread.start()
+waterThread.start()
+#tasksThread.start()
+logging.info("All sensor sub-systems started")
 
 # Callback when connection is accidentally lost.
 def on_connection_interrupted(connection, error, **kwargs):
@@ -86,46 +135,8 @@ def on_resubscribe_complete(resubscribe_future):
         if qos is None:
             sys.exit("Server rejected resubscribe to topic: {}".format(topic))
 
-# end of Amazon Sample code
 
-# Gloabls area
-args = parser.parse_args()
-
-io.init_logging(getattr(io.LogLevel, args.verbosity), 'stderr')
-
-global received_count
-received_count = 0
-received_all_event = threading.Event()
-OUTBOX = deque() # create a linked list to handle messages for sensor readings to send to AWS
-
-
-REPORTING_TIME = 3600 # default to 1 hour in seconds
-global CONNECTED
-WATERING_TIME_SEC = 8 # the default ammount of time to water
-
-# the list of supported actions we support
-SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
-
-ACTION_ON_TERMINATION = ""
-
-SUB_TOPIC = f"sensors/+/{args.client_id}"
-
-# globals done, start up the sensor subsystems
-logging.info("Starting up sensor sub-systems")
-ledEvent = threading.Event()
-waterEvent = threading.Event()
-
-ledObj = led.ledManager(ledEvent)
-waterObj = water.waterManager(waterEvent, WATERING_TIME_SEC)
-soilObj = soil.soilManager()
-
-ledThread = threading.Thread(name='LED subsystem', target=ledObj.start)
-waterThread = threading.Thread(name='Water subsystem', target=waterObj.start)
-
-ledThread.start()
-waterThread.start()
-logging.info("All sensor sub-systems started")
-
+## my code starts here ##
 
 # return true if the json formatted payload contains a valid 'command' that we support
 def supportedAction(payload):
@@ -232,8 +243,6 @@ def parseSoil(topic, payload):
             msg = getSoilHumidity()
     if msg:
         composeMessage(topic, msg)
-    else: 
-        logging.debug("ignored request for soil sensor")
 
 # parse the request or command for the water module
 def parseWater(topic, payload):
@@ -276,8 +285,6 @@ def parseWater(topic, payload):
     
     if msg:
         composeMessage(topic, msg)
-    else: 
-        logging.debug("ignored request for water system")
 
 # handles the led and informs LED thread if it should blink or not
 # the current behavior for 'on' means blink. We could add in function to keep
@@ -297,8 +304,6 @@ def parseLight(topic, payload):
             msg = getLEDStatus()
     if msg:
         composeMessage(topic, msg)
-    else: 
-        logging.debug("ignored request for light/led system")
 
 # the Info topic can multisystem responses, in contrast to the rest of the sensor topics
 # which only return a single status
@@ -309,8 +314,6 @@ def parseInfo(topic, payload):
             msg = getBulk(topic)
     if msg:
         composeMessage(topic, msg)
-    else:    
-        logging.debug("ignored request for info")
 
 def parseCommand(topic, payload):
     msg = {}
@@ -328,8 +331,6 @@ def parseCommand(topic, payload):
             ACTION_ON_TERMINATION = 'reboot'
     if msg:
         composeMessage(topic, msg)
-    else:    
-        logging.debug("ignored request for command")
 
 ## Sensor data retrieval functions ## 
 #####################################
@@ -373,7 +374,7 @@ def getLEDStatus():
     msg['status'] = state
     return msg
 
-# report the soil humidity reading
+# this function reports the soil humidity value
 # the soil humidity class and getSoilHumidity() function manages it's own power-state 
 # because leaving it on will damange the sensor, so the state cannot be set by the user
 def getSoilHumidity():
@@ -514,7 +515,6 @@ if __name__ == '__main__':
     print("Subscribing to topic '{}'...".format(SUB_TOPIC))
     subscribe_future, packet_id = mqtt_connection.subscribe(
             topic=SUB_TOPIC,
-            # to minimize traffic over our 802.15.4 links, don't provide guarenteed delivery
             #qos=mqtt.QoS.AT_LEAST_ONCE,
             qos=mqtt.QoS.AT_MOST_ONCE,
             callback=receive_loop)
@@ -555,5 +555,6 @@ if __name__ == '__main__':
     ## if a reboot was requested
     if ACTION_ON_TERMINATION == 'reboot':
         os.system("sudo reboot")
+
 
 
