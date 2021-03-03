@@ -21,8 +21,8 @@ import lights as led
 import soilHumidity as soil
 import waterController as water
 
-logging.basicConfig(level=logging.DEBUG)
-#logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 # this simple class holds a message and a topic string
 # we will then create a deque that holds SensorMessages
@@ -534,14 +534,13 @@ if __name__ == '__main__':
     # compose an initial online status message
     msg = {}
     msg['status'] = 'online'
-    composeMessage("sensors/info/{args.client_id}", msg)
+    composeMessage(f"sensors/info/{args.client_id}", msg)
     pub_count = 0
     # publish a message saying we are online
     while CONNECTED:
         msgEvent.wait(LOOP_TIMEOUT)
         if OUTBOX: # check and see if there are any messages to send
             msg = OUTBOX.popleft()
-            logging.debug("Publishing message to topic '{}': {}".format(msg.getTopic(), msg.getMessage() ))
             mqtt_connection.publish(
                     topic=msg.getTopic(),
                     payload=json.dumps(msg.getMessage()), # don't forget to convert to binary before sending
