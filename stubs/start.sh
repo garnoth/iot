@@ -7,5 +7,5 @@ cert=$prefix-certificate.pem.crt
 key=$prefix-private.pem.key
 name=gateway
 
-python3 stub_mainLoop.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --topic "sensors/+/gateway" --client-id $name
+python3 mainLoop.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --topic "sensors/+/gateway" --client-id $name
 #python3 pubsub.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --topic "sensor/+/gateway" --client-id RPI-GW-01

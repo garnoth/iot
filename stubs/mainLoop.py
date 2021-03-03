@@ -1,6 +1,9 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0.
 
+# major modifications made by Peter Van Eenoo
+# for CSS 532 at UW Bothell
+
 import os
 import argparse
 from awscrt import io, mqtt, auth, http
@@ -9,7 +12,6 @@ import sys
 import threading
 import logging
 import time
-from uuid import uuid4
 from collections import deque
 from uptime import uptime
 from datetime import timedelta
@@ -22,6 +24,8 @@ import stub_waterController as water
 logging.basicConfig(level=logging.DEBUG)
 #logging.basicConfig(level=logging.INFO)
 
+# this simple class holds a message and a topic string
+# we will then create a deque that holds SensorMessages
 class SensorMessage:
     def __init__(self, topic, message):
         self.topic = topic
@@ -32,12 +36,7 @@ class SensorMessage:
     def getMessage(self):
         return self.message
 
-# This sample uses the Message Broker for AWS IoT to send and receive messages
-# through an MQTT connection. On startup, the device connects to the server,
-# subscribes to a topic, and begins publishing messages to that topic.
-# The device should receive those same messages back from the message broker,
-# since it is subscribed to that same topic.
-
+# grab and parse the arguments
 parser = argparse.ArgumentParser(description="Send and receive messages through and MQTT connection.")
 parser.add_argument('--endpoint', required=True, help="Your AWS IoT custom endpoint, not including a port. " +
         "Ex: \"abcd123456wxyz-ats.iot.us-east-1.amazonaws.com\"")
@@ -46,12 +45,10 @@ parser.add_argument('--key', help="File path to your private key, in PEM format.
 parser.add_argument('--root-ca', help="File path to root certificate authority, in PEM format. " +
         "Necessary if MQTT server uses a certificate that's not already in " +
         "your trust store.")
-parser.add_argument('--client-id', default="test-" + str(uuid4()), help="Client ID for MQTT connection.")
+parser.add_argument('--client-id', default="test-", help="Client ID for MQTT connection.")
 parser.add_argument('--topic', default="test/topic", help="Topic to subscribe to, and publish messages to.")
 parser.add_argument('--message', default="Hello World!", help="Message to publish. " +
         "Specify empty string to publish nothing.")
-parser.add_argument('--count', default=10, type=int, help="Number of messages to publish/receive before exiting. " +
-        "Specify 0 to run forever.")
 parser.add_argument('--use-websocket', default=False, action='store_true',
         help="To use a websocket instead of raw mqtt. If you " +
         "specify this option you must specify a region for signing, you can also enable proxy mode.")
@@ -63,60 +60,14 @@ parser.add_argument('--proxy-port', type=int, default=8080, help="Port for proxy
 parser.add_argument('--verbosity', choices=[x.name for x in io.LogLevel], default=io.LogLevel.NoLogs.name,
         help='Logging level')
 
-# Gloabls area
-args = parser.parse_args()
-
-io.init_logging(getattr(io.LogLevel, args.verbosity), 'stderr')
-
-global received_count
-received_count = 0
-received_all_event = threading.Event()
-#mutex = threading.Lock()
-OUTBOX = deque() # create a linked list to handle messages for sensor readings to send to AWS
-
-## the certificate name doesn't quite match our MQTT name
-## Edit this for each device
-# TODO set these via the commandline args
-
-REPORTING_TIME = 3600 # default to 1 hour in seconds
-global CONNECTED
-WATERING_TIME_SEC = 8 # the default ammount of time to water
-
-# the list of supported actions we support
-SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
-
-ACTION_ON_TERMINATION = ""
-
-SUB_TOPIC = f"sensors/+/{args.client_id}"
-
-logging.info("Starting up sensor sub-systems")
-ledEvent = threading.Event()
-waterEvent = threading.Event()
-#tasksEvent = threading.Event()
-
-ledObj = led.ledManager(ledEvent)
-waterObj = water.waterManager(waterEvent, WATERING_TIME_SEC)
-soilObj = soil.soilManager()
-#tasksOjb = task.taskManager()
-
-ledThread = threading.Thread(name='LED subsystem', target=ledObj.start)
-waterThread = threading.Thread(name='Water subsystem', target=waterObj.start)
-#soilThread = threading.Thread(name='Soil subsystem', target=soilObj.start)
-#tasksThread = threading.Thread(name='Task reporting subsystem', target=startTaskRoutine, args =(REPORTING_TIME,))
-
-ledThread.start()
-waterThread.start()
-#tasksThread.start()
-logging.info("All sensor sub-systems started")
-
 # Callback when connection is accidentally lost.
 def on_connection_interrupted(connection, error, **kwargs):
-    print("Connection interrupted. error: {}".format(error))
+    logging.info("Connection interrupted. error: {}".format(error))
 
 
 # Callback when an interrupted connection is re-established.
 def on_connection_resumed(connection, return_code, session_present, **kwargs):
-    print("Connection resumed. return_code: {} session_present: {}".format(return_code, session_present))
+    logging.info("Connection resumed. return_code: {} session_present: {}".format(return_code, session_present))
 
     if return_code == mqtt.ConnectReturnCode.ACCEPTED and not session_present:
         print("Session did not persist. Resubscribing to existing topics...")
@@ -129,14 +80,58 @@ def on_connection_resumed(connection, return_code, session_present, **kwargs):
 
 def on_resubscribe_complete(resubscribe_future):
     resubscribe_results = resubscribe_future.result()
-    print("Resubscribe results: {}".format(resubscribe_results))
+    logging.info("Resubscribe results: {}".format(resubscribe_results))
 
     for topic, qos in resubscribe_results['topics']:
         if qos is None:
             sys.exit("Server rejected resubscribe to topic: {}".format(topic))
 
+## end of Amazon Sample code ##
 
-## my code starts here ##
+###### Gloabls area for main program and setup #########
+args = parser.parse_args()
+
+io.init_logging(getattr(io.LogLevel, args.verbosity), 'stderr')
+
+global received_count
+received_count = 0
+received_all_event = threading.Event()
+OUTBOX = deque() # create a linked list to handle messages for sensor readings to send to AWS
+LOOP_TIMEOUT = 5 # Time timeout for the message sending loop, use this or it will never check to see if we have disconnected
+
+global CONNECTED 
+WATERING_TIME_SEC = 8 # the default ammount of time to water
+
+# the list of supported actions our program will response to
+SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
+
+# can be set to reboot or halt
+ACTION_ON_TERMINATION = ""
+
+
+SUB_TOPIC = f"sensors/+/{args.client_id}"
+## main program message event to wake-up and check for messages
+msgEvent = threading.Event()
+
+
+# globals done, start up the sensor subsystems
+logging.info("Starting up sensor subsystems")
+ledEvent = threading.Event()
+waterEvent = threading.Event()
+
+ledObj = led.ledManager(ledEvent)
+waterObj = water.waterManager(waterEvent, WATERING_TIME_SEC)
+soilObj = soil.soilManager()
+
+ledThread = threading.Thread(name='LED subsystem', target=ledObj.start)
+waterThread = threading.Thread(name='Water subsystem', target=waterObj.start)
+
+ledThread.start()
+waterThread.start()
+logging.info("All sensor subsystems started")
+
+
+##################
 
 # return true if the json formatted payload contains a valid 'command' that we support
 def supportedAction(payload):
@@ -158,7 +153,7 @@ def receive_loop(topic, payload, **kwargs):
                 if (parsed_topic[0] == 'sensors') and (parsed_topic[2] == args.client_id):
                     # a thing is a sensor,actuator,information or command 
                     thing = parsed_topic[1]
-                    logging.debug('Started parsing: {}'.format(thing))
+                    logging.debug('Started parsing thing: {}'.format(thing))
                     payloadJson = json.loads(payload)
                     # we can filter out our message responses here and skip processing if the request doesn't contain a supported
                     # action, because it likely is just our own message response
@@ -196,16 +191,12 @@ def receive_loop(topic, payload, **kwargs):
 
 ## because these 4 sensor readings all come from the same device, we will handle them
 ## from the same function
-## I tested the power consumption of the weather sensor and it was about 2mA so we don't bother turning 
-## it on an off, it will stay on
 def parseSensor(topic, payload, thing):
     msg = {}
     if 'get' in payload:
         target = payload['get']
-        if target == "status":
-            # TODO check the sensor status, is it on or off
-            # this would handle error conditions where some of the sensors didn't come
-            # online when the program started. 
+        if target == "status": # we can't start without this sensor being online because of i2c dependencies
+            # so it's pointless to try to turn it off or on
             msg['status'] = 'on'
 
         elif target == "value":
@@ -243,8 +234,10 @@ def parseSoil(topic, payload):
             msg = getSoilHumidity()
     if msg:
         composeMessage(topic, msg)
+    else: 
+        logging.debug("ignored request for soil sensor")
 
-# parse the request or command for the water module
+# parse the request for the water module
 def parseWater(topic, payload):
     msg = {}
     if 'set' in payload:
@@ -285,6 +278,8 @@ def parseWater(topic, payload):
     
     if msg:
         composeMessage(topic, msg)
+    else: 
+        logging.debug("ignored request for water system")
 
 # handles the led and informs LED thread if it should blink or not
 # the current behavior for 'on' means blink. We could add in function to keep
@@ -304,6 +299,8 @@ def parseLight(topic, payload):
             msg = getLEDStatus()
     if msg:
         composeMessage(topic, msg)
+    else: 
+        logging.debug("ignored request for light/led system")
 
 # the Info topic can multisystem responses, in contrast to the rest of the sensor topics
 # which only return a single status
@@ -314,7 +311,10 @@ def parseInfo(topic, payload):
             msg = getBulk(topic)
     if msg:
         composeMessage(topic, msg)
+    else:    
+        logging.debug("ignored request for info")
 
+# parse a command request
 def parseCommand(topic, payload):
     msg = {}
     global ACTION_ON_TERMINATION
@@ -322,15 +322,22 @@ def parseCommand(topic, payload):
         if payload['get'] == 'uptime':
             msg = getUptime()
     if 'deviceState' in payload:
-        if payload['deviceState'] == 'off':
-            msg['status'] = 'shutting down'
+        action = payload['deviceState']
+        if action == 'disconnect':
+            msg['status'] = 'disconnecting'
             disconnectLoop()
-        elif payload['deviceState'] == 'reboot':
+        elif action == 'reboot':
             msg['status'] = 'rebooting'
-            disconnectLoop()
             ACTION_ON_TERMINATION = 'reboot'
+            disconnectLoop()
+        elif action == 'halt' or action == 'off':
+            msg['status'] = 'halting'
+            ACTION_ON_TERMINATION = 'halt'
+            disconnectLoop()
     if msg:
         composeMessage(topic, msg)
+    else:    
+        logging.debug("ignored request for command")
 
 ## Sensor data retrieval functions ## 
 #####################################
@@ -374,7 +381,7 @@ def getLEDStatus():
     msg['status'] = state
     return msg
 
-# this function reports the soil humidity value
+# report the soil humidity reading
 # the soil humidity class and getSoilHumidity() function manages it's own power-state 
 # because leaving it on will damange the sensor, so the state cannot be set by the user
 def getSoilHumidity():
@@ -443,6 +450,7 @@ def setWateringTime(value):
 # Appends a message to the outbox queue which will be sent later by the main loop
 def composeMessage(topic, msg):
     OUTBOX.append(SensorMessage(topic, msg))
+    msgEvent.set() # wake up the send loop
 
 ## system functions
 
@@ -502,48 +510,51 @@ if __name__ == '__main__':
                 clean_session=False,
                 keep_alive_secs=6)
 
-        print("Connecting to {} with client ID '{}'...".format(
+        logging.info("Connecting to {} with client ID '{}'...".format(
             args.endpoint, args.client_id))
 
         connect_future = mqtt_connection.connect()
 
     # Future.result() waits until a result is available
     connect_future.result()
-    print("Connected!")
+    logging.info("Connected!")
 
     # Subscribe
-    print("Subscribing to topic '{}'...".format(SUB_TOPIC))
+    logging.info("Subscribing to topic '{}'...".format(SUB_TOPIC))
     subscribe_future, packet_id = mqtt_connection.subscribe(
             topic=SUB_TOPIC,
+            # to minimize traffic over our 802.15.4 links, don't provide guarenteed delivery
             #qos=mqtt.QoS.AT_LEAST_ONCE,
             qos=mqtt.QoS.AT_MOST_ONCE,
             callback=receive_loop)
 
     subscribe_result = subscribe_future.result()
-    print("Subscribed with {}".format(str(subscribe_result['qos'])))
+    logging.info("Subscribed with {}".format(str(subscribe_result['qos'])))
     CONNECTED = True
-
-    publish_count = 1
+    # compose an initial online status message
+    msg = {}
+    msg['status'] = 'online'
+    composeMessage("sensors/info/{args.client_id}", msg)
+    pub_count = 0
     # publish a message saying we are online
     while CONNECTED:
+        msgEvent.wait(LOOP_TIMEOUT)
         if OUTBOX: # check and see if there are any messages to send
             msg = OUTBOX.popleft()
-            ## we have an item
             logging.debug("Publishing message to topic '{}': {}".format(msg.getTopic(), msg.getMessage() ))
             mqtt_connection.publish(
                     topic=msg.getTopic(),
                     payload=json.dumps(msg.getMessage()), # don't forget to convert to binary before sending
-                    qos=mqtt.QoS.AT_LEAST_ONCE)
-            publish_count += 1
-        else:
-            time.sleep(1)
-    
-    # Disconnect
-    print("Disconnecting...")
+                    #qos=mqtt.QoS.AT_LEAST_ONCE)
+                    qos=mqtt.QoS.AT_MOST_ONCE)
+            pub_count += 1
+   
+    ## out of loop, disconnect must have been called
+    logging.info("Disconnecting...")
     disconnect_future = mqtt_connection.disconnect()
     disconnect_future.result()
-    print("Disconnected!")
-
+    logging.info("Disconnected!")
+    logging.info("Sent '{}' messages".format(pub_count))
     ## Clean up area ##
     ledObj.terminate()
     waterObj.terminate()
@@ -554,7 +565,7 @@ if __name__ == '__main__':
 
     ## if a reboot was requested
     if ACTION_ON_TERMINATION == 'reboot':
-        os.system("sudo reboot")
-
-
+        os.system("sudo halt --reboot")
+    elif ACTION_ON_TERMINATION == 'halt':
+        os.system("sudo halt -p")
 
