@@ -20,9 +20,16 @@ import weatherSensor as ws
 import lights as led
 import soilHumidity as soil
 import waterController as water
+from datetime import datetime
+
+## logging setup for different test methods
 
 #logging.basicConfig(level=logging.DEBUG)
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
+
+#logging.basicConfig(filename='debug.log', level=logging.DEBUG)
+logging.basicConfig(filename='info.log', level=logging.INFO)
+
 
 # this simple class holds a message and a topic string
 # we will then create a deque that holds SensorMessages
@@ -49,14 +56,6 @@ parser.add_argument('--client-id', default="test-", help="Client ID for MQTT con
 parser.add_argument('--topic', default="test/topic", help="Topic to subscribe to, and publish messages to.")
 parser.add_argument('--message', default="Hello World!", help="Message to publish. " +
         "Specify empty string to publish nothing.")
-parser.add_argument('--use-websocket', default=False, action='store_true',
-        help="To use a websocket instead of raw mqtt. If you " +
-        "specify this option you must specify a region for signing, you can also enable proxy mode.")
-parser.add_argument('--signing-region', default='us-east-1', help="If you specify --use-web-socket, this " +
-        "is the region that will be used for computing the Sigv4 signature")
-parser.add_argument('--proxy-host', help="Hostname for proxy to connect to. Note: if you use this feature, " +
-        "you will likely need to set --root-ca to the ca for your proxy.")
-parser.add_argument('--proxy-port', type=int, default=8080, help="Port for proxy to connect to.")
 parser.add_argument('--verbosity', choices=[x.name for x in io.LogLevel], default=io.LogLevel.NoLogs.name,
         help='Logging level')
 
@@ -183,8 +182,8 @@ def receive_loop(topic, payload, **kwargs):
                             logging.debug("received command request: {}".format(payload))
                             parseCommand(topic, payloadJson)
                             topic_parsed = True
-    if not topic_parsed:
-        logging.debug("Unrecognized message topic or sensor type, or it's my previous msg")
+    #if not topic_parsed:
+    #    logging.debug("Unrecognized message topic or sensor type, or it's my previous msg")
 
 ## Command parsing and validating function ##
 #############################################
@@ -321,6 +320,8 @@ def parseCommand(topic, payload):
     if 'get' in payload:
         if payload['get'] == 'uptime':
             msg = getUptime()
+        if payload['get'] == 'timestamp':
+            msg = getTimeStamp()
     if 'deviceState' in payload:
         action = payload['deviceState']
         if action == 'disconnect':
@@ -452,16 +453,23 @@ def composeMessage(topic, msg):
     OUTBOX.append(SensorMessage(topic, msg))
     msgEvent.set() # wake up the send loop
 
-## system functions
 
 # returns a formatted (system) uptime value for this device
-def getSystemUptime():
+def getSystemUptime(raw):
     return "{:0>8}".format(str(timedelta(seconds=int(uptime()))))
 
- 
+# return the formatted system uptime
 def getUptime():
     msg = {}
     msg['uptime'] = getSystemUptime()
+    return msg
+
+# useful for latency testing
+def getTimeStamp():
+    msg = {}
+    msg['ts'] = datetime.utcnow().isoformat()
+    ## we can use this to see how fast we are sending these
+    logging.debug("Sending TS response at: {}".format(datetime.now()))
     return msg
 
 # function to set the global loop variable to false so we exit out
@@ -478,42 +486,22 @@ if __name__ == '__main__':
     host_resolver = io.DefaultHostResolver(event_loop_group)
     client_bootstrap = io.ClientBootstrap(event_loop_group, host_resolver)
 
-    if args.use_websocket == True:
-        proxy_options = None
-        if (args.proxy_host):
-            proxy_options = http.HttpProxyOptions(host_name=args.proxy_host, port=args.proxy_port)
+    mqtt_connection = mqtt_connection_builder.mtls_from_path(
+            endpoint=args.endpoint,
+            cert_filepath=args.cert,
+            pri_key_filepath=args.key,
+            client_bootstrap=client_bootstrap,
+            ca_filepath=args.root_ca,
+            on_connection_interrupted=on_connection_interrupted,
+            on_connection_resumed=on_connection_resumed,
+            client_id=args.client_id,
+            clean_session=False,
+            keep_alive_secs=6)
 
-        credentials_provider = auth.AwsCredentialsProvider.new_default_chain(client_bootstrap)
-        mqtt_connection = mqtt_connection_builder.websockets_with_default_aws_signing(
-                endpoint=args.endpoint,
-                client_bootstrap=client_bootstrap,
-                region=args.signing_region,
-                credentials_provider=credentials_provider,
-                websocket_proxy_options=proxy_options,
-                ca_filepath=args.root_ca,
-                on_connection_interrupted=on_connection_interrupted,
-                on_connection_resumed=on_connection_resumed,
-                client_id=args.client_id,
-                clean_session=False,
-                keep_alive_secs=6)
+    logging.info("Connecting to {} with client ID '{}'...".format(
+        args.endpoint, args.client_id))
 
-    else:
-        mqtt_connection = mqtt_connection_builder.mtls_from_path(
-                endpoint=args.endpoint,
-                cert_filepath=args.cert,
-                pri_key_filepath=args.key,
-                client_bootstrap=client_bootstrap,
-                ca_filepath=args.root_ca,
-                on_connection_interrupted=on_connection_interrupted,
-                on_connection_resumed=on_connection_resumed,
-                client_id=args.client_id,
-                clean_session=False,
-                keep_alive_secs=6)
-
-        logging.info("Connecting to {} with client ID '{}'...".format(
-            args.endpoint, args.client_id))
-
-        connect_future = mqtt_connection.connect()
+    connect_future = mqtt_connection.connect()
 
     # Future.result() waits until a result is available
     connect_future.result()
