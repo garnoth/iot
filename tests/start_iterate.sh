@@ -8,4 +8,4 @@ rootCA=AmazonRootCA3.pem
 cert=lappytoppy.cert.pem
 key=lappytoppy.private.key
 
-python3 latency.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --client-id $name
+python3 iterate.py --endpoint $endpoint --root-ca $certdir$rootCA --cert $certdir$cert --key $certdir$key --client-id $name

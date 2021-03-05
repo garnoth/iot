@@ -264,7 +264,7 @@ def parseWater(topic, payload):
 
     if 'get' in payload:
         action = payload['get']
-        if action == 'status' or action == 'state':
+        if action == 'status' or action == 'state' or action == 'value':
             msg = getWaterState()
         elif action == 'cumulative':
             msg = getWaterCumulativeTotal()
@@ -286,15 +286,17 @@ def parseWater(topic, payload):
 def parseLight(topic, payload):
     msg = {}
     if 'set' in payload:
-        if payload['set'] == 'on':
+        action == payload['set']
+        if action == 'on':
             ledEvent.set()
             msg['status'] = 'on'
-        elif payload['set'] == 'off':
+        elif action == 'off':
             ledEvent.clear()
             msg['status'] = 'off'
 
     if 'get' in payload:
-        if payload['get'] == 'status':
+        action == payload['get']
+        if action == 'status' or action == 'value':
             msg = getLEDStatus()
     if msg:
         composeMessage(topic, msg)

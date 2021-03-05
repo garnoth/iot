@@ -85,12 +85,23 @@ global WAIT
 received_count = 0
 
 global CONNECTED 
-SUB_TOPIC = f"sensors/+/node2"
+#SUB_TOPIC = f"sensors/+/node2"
 ## main program message event to wake-up and check for messages
 msgEvent = threading.Event()
-target_client = 'node1'
-target_sensor = 'cmd'
-target_topic = f"sensors/{target_sensor}/{target_client}"
+
+
+
+# the list of supported actions our device will response to
+SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
+
+
+# return true if the json formatted payload contains a valid 'command' that the
+# device supports
+def supportedAction(payload):
+    action = list(payload.keys())[0]
+    return action in SUPPORTED_ACTIONS
+
+
 global coll
 # Callback when the subscribed topic receives a message
 def receive_loop(topic, payload, **kwargs):
@@ -98,7 +109,8 @@ def receive_loop(topic, payload, **kwargs):
     global sent_ts
     global WAIT
     global coll
-    if 'ts' in payload:
+    if not supportedAction(payload): # the message should be a response from the
+        # device and not our reqest
         recv_ts = datetime.now()
         diff = recv_ts - sent_ts
         print(diff.microseconds / 1000) 
@@ -191,9 +203,9 @@ if __name__ == '__main__':
     logging.info("Connected!")
 
     # Subscribe
-    logging.info("Subscribing to topic '{}'...".format(SUB_TOPIC))
+    logging.info("Subscribing to topic '{}'...".format("sensors/+/node2"))
     subscribe_future, packet_id = mqtt_connection.subscribe(
-            topic=SUB_TOPIC,
+            topic="sensors/+/node2",
             #qos=mqtt.QoS.AT_LEAST_ONCE,
             qos=mqtt.QoS.AT_MOST_ONCE,
             callback=receive_loop)
@@ -204,11 +216,22 @@ if __name__ == '__main__':
     # compose an initial online status message
     pub_count = 0
     # publish a message saying we are online
-    msg = {}
-    msg['get'] = 'timestamp'
     qos=mqtt.QoS.AT_MOST_ONCE
+    
+    msg = {}
+    msg['get'] = 'value'
     pp = json.dumps(msg)
-    while pub_count < 20:
+    i = 0
+    devices=['temp','pressure','humidity', 'altitude', 'soil', 'water', 'led']
+    
+
+    while pub_count < 100:
+        if i > len(devices):
+            i = 0
+        
+        target_sensor = devices[i] # iterate through the device system
+        target_client = 'node2'
+        target_topic = f"sensors/{target_sensor}/{target_client}"
         WAIT = True
         mqtt_connection.publish(
                     topic=target_topic,
@@ -216,8 +239,9 @@ if __name__ == '__main__':
                     qos=mqtt.QoS.AT_MOST_ONCE)
 
         sent_ts = datetime.now()
-        #logging.debug("Sent message at {} to topic'{}':{}".format(ts,target_topic, pp))
+        logging.debug("Sent message to topic'{}':{}".format(target_topic, pp))
         pub_count += 1
+        i += 1
         while WAIT: # wait until we recived a response before we loop again
             time.sleep(.5)
 
