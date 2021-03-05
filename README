@@ -31,7 +31,7 @@ sensors/water/gateway
 "get" : "state"
 "get" : "total"
 "get" : "cumulative"
-"setTime" : "10"  # accepted range is 1-122
+"setTime" : "10"    # accepted range is 1-122
 "set" : "on"
 "set" : "off"
 "set" : "clear"
@@ -46,6 +46,7 @@ sensors/info/gateway
 
 sensors/cmd/gateway
 "get" : "uptime"
+"get" : "timestamp"   #used for testing
 "deviceState" : "disconnect"
 "deviceState" : "reboot"
 "deviceState" : "halt"
