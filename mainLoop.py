@@ -286,7 +286,7 @@ def parseWater(topic, payload):
 def parseLight(topic, payload):
     msg = {}
     if 'set' in payload:
-        action == payload['set']
+        action = payload['set']
         if action == 'on':
             ledEvent.set()
             msg['status'] = 'on'
@@ -295,7 +295,7 @@ def parseLight(topic, payload):
             msg['status'] = 'off'
 
     if 'get' in payload:
-        action == payload['get']
+        action = payload['get']
         if action == 'status' or action == 'value':
             msg = getLEDStatus()
     if msg:
