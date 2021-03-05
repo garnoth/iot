@@ -245,11 +245,10 @@ if __name__ == '__main__':
         while WAIT: # wait until we recived a response before we loop again
             time.sleep(.5)
 
+	time.sleep(5) # wait 5 seconds before we send another request
 
     
     time.sleep(1)
-    #recvQueue.update(payload)
-    #dict(sorted(recvQueue.items(), key=lambda item: item[1]))
     avg = sum(coll)/len(coll)
     print("averge latency in ms:", avg)
     
