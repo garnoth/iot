@@ -88,7 +88,7 @@ global CONNECTED
 SUB_TOPIC = f"sensors/+/node2"
 ## main program message event to wake-up and check for messages
 msgEvent = threading.Event()
-target_client = 'node2'
+target_client = 'node1'
 target_sensor = 'cmd'
 target_topic = f"sensors/{target_sensor}/{target_client}"
 global coll
@@ -99,12 +99,11 @@ def receive_loop(topic, payload, **kwargs):
     global WAIT
     global coll
     if 'ts' in payload:
-        recv_ts = datetime.utcnow()
+        recv_ts = datetime.now()
         diff = recv_ts - sent_ts
-        print(diff)
-        x =str(diff).split(".")
-        y = float("0."+str(x[1]))
-        coll.append(y)
+        print(diff.microseconds / 1000) 
+        x = diff.microseconds / 1000
+        coll.append(x)
         WAIT = False
 
 ## Sensor data retrieval functions ## 
@@ -209,14 +208,14 @@ if __name__ == '__main__':
     msg['get'] = 'timestamp'
     qos=mqtt.QoS.AT_MOST_ONCE
     pp = json.dumps(msg)
-    while pub_count < 10:
+    while pub_count < 20:
         WAIT = True
         mqtt_connection.publish(
                     topic=target_topic,
                     payload=pp,
                     qos=mqtt.QoS.AT_MOST_ONCE)
 
-        sent_ts = datetime.utcnow()
+        sent_ts = datetime.now()
         #logging.debug("Sent message at {} to topic'{}':{}".format(ts,target_topic, pp))
         pub_count += 1
         while WAIT: # wait until we recived a response before we loop again
@@ -228,8 +227,8 @@ if __name__ == '__main__':
     #recvQueue.update(payload)
     #dict(sorted(recvQueue.items(), key=lambda item: item[1]))
     avg = sum(coll)/len(coll)
-    print("averge latency in ms:", avg * 100)
-    print("averge latency:", avg)
+    print("averge latency in ms:", avg)
+    
     ## out of loop, disconnect must have been called
     logging.info("Disconnecting...")
     disconnect_future = mqtt_connection.disconnect()
