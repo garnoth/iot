@@ -7,6 +7,11 @@ import threading
 #import adafruit_ads1x15.ads1015 as ADS
 #from adafruit_ads1x15.analog_in import AnalogIn
 
+
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
+
 ## calibrated values for this unique sensor
 #CEILING = 14000
 #FLOOR = 25000
@@ -61,7 +66,6 @@ class soilManager:
 
         #GPIO.output(SOIL_POWER_PIN, GPIO.HIGH) # Turn on and wait for sensor
         sleep(WAIT_TIME) 
-        # TODO what happens if the channel reading is bad, catch errors here and provide meaningful response
         self.soilValue = HARDCODED_RETV
         #print("debug:{:.2f}".format(round(self.soilValue, 2)))
 

@@ -4,6 +4,10 @@
 # major modifications made by Peter Van Eenoo
 # for CSS 532 at UW Bothell
 
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
+
 import os
 import argparse
 from awscrt import io, mqtt, auth, http
@@ -182,8 +186,8 @@ def receive_loop(topic, payload, **kwargs):
                             logging.debug("received command request: {}".format(payload))
                             parseCommand(topic, payloadJson)
                             topic_parsed = True
-    #if not topic_parsed:
-    #    logging.debug("Unrecognized message topic or sensor type, or it's my previous msg")
+    if not topic_parsed:
+        logging.debug("Unrecognized message topic or sensor type, or it's my previous msg")
 
 ## Command parsing and validating function ##
 #############################################
@@ -437,8 +441,8 @@ def interruptWater():
 # request to change the water system's time in seconds that the hose is on for
 def setWateringTime(value):
     msg = {}
-    ## the sub-process to set new watering time block, this can hang the MQTT connection
-    ## if we don't send a response soon enough, so report an error if watering is in prog
+    ## the sub-process which trys to set the watering-time will block, this can hang the MQTT connection
+    ## if we don't send a response soon enough, so report an error if watering is in progress
     if not waterObj.getState():
         value = waterObj.changeWateringTime(value)
         msg['watering time'] = value
@@ -466,7 +470,7 @@ def getUptime():
     msg['uptime'] = getSystemUptime()
     return msg
 
-# useful for latency testing
+# useful for latency testing and debugging
 def getTimeStamp():
     msg = {}
     msg['ts'] = datetime.utcnow().isoformat()

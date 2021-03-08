@@ -1,7 +1,13 @@
 ## stub version has GPIO and hardware requirements commented out
 from time import sleep     # Import the sleep function from the time module
 import threading
+
 #import RPi.GPIO as GPIO    # Import Raspberry Pi GPIO library
+
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
+
 WATER_PIN = 20  # the choses GPIO pin for controlling the water valve
 
 #GPIO.setwarnings(False)    # Ignore warning for now

@@ -2,7 +2,9 @@ import RPi.GPIO as GPIO    # Import Raspberry Pi GPIO library
 from time import sleep     # Import the sleep function from the time module
 import threading
 
-#GPIO.setmode(GPIO.BCM) # only need to set for testing
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
 
 LED_PIN = 21  # the choses GPIO 21/physical pin 40, for blinking our LED
 GPIO.setwarnings(False)    # Ignore warning for now
@@ -11,10 +13,12 @@ GPIO.setup(LED_PIN, GPIO.OUT, initial=GPIO.LOW)   # Set pin 40 to be the output 
 BLINK_SPEED = 0.7
 TIMEOUT = 2
 
+# this class manages a blinking LED, it can be inturrupted by the user
 class ledManager:
     def __init__(self, e):
         self.running = True
         self.event = e
+
     def terminate(self):
         self.running = False
 

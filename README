@@ -1,24 +1,23 @@
 # this main directory contains the primary files to run the program
-
-# stubs/ 
-This directory contains the same system files but the subsystem classes are all configured to return a value of 55 and not connect to GPOI or board specific I/O
-this is useful for testing the system as-is without the hardware. 
-Running the stub system also allows us to calculate the overall power consumption of the system minus the power draw of a specific device/sensors/led
-
-To run the program simply execute start.sh
+To run the main program: simply execute start.sh
 	You need to edit the prefix= and name= lines in start.sh 
 	For example, the gateway's certificate is: cb11952a43-certificate.pem.crt
 	so I would set the prefix to cb11952a43
 
+
+# stubs/ 
+This directory contains the same system files but the subsystem classes are all configured to return a value of 55 and not connect to GPOI or board specific I/O
+this is useful for testing the system as-is without the hardware, it also allows us to indirectly measure the sensor board's power requirements
+
 # config/ 
-this directory contains the special configuration files for the raspberry pi OS that I needed to configure
+this directory contains the special configuration files for the raspberry pi OS that I needed to configure for the gateway and nodes
 
 # tests/
 This directory contains 2 differnet testing programs that I used to test system performance
 to start just run start_[iterate/latency] and modify it to include your certificates. 
 start_iterate.sh will walk through each sensor system and reqest the value from
-it, wait until it recieces a response and ask for the next sensor. Useful for
-testing power load as this will activate differnt sensors
+it, wait until it recieces a response and ask for the next sensor. 
+Useful for testing power load as this will activate differnt sensors
 
 start_latency.sh will test the latency with 20 requests and responses and calculate
 the average request latency from the time sent to the time received and print
@@ -26,6 +25,7 @@ the calculation
 
 
 # The MQTT message layout along with supported commands:
+My MQTT message topology is: sensors/{device}/{name}
 
 sensors/temp/gateway
 "get" : "value"
@@ -64,4 +64,3 @@ sensors/cmd/gateway
 "deviceState" : "halt"
 
 My program allows the gateway to also be a sensor/measuring device but it is not required
- 

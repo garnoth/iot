@@ -6,10 +6,15 @@ import RPi.GPIO as GPIO    # Import Raspberry Pi GPIO library
 import adafruit_ads1x15.ads1015 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project 
+# March 2021
+
 ## calibrated values for this unique sensor
 #CEILING = 14000
 #FLOOR = 25000
 
+# sensor 2's values
 CEILING = 20845
 FLOOR = 22280
 
@@ -21,6 +26,9 @@ GPIO.setup(SOIL_POWER_PIN, GPIO.OUT, initial=GPIO.LOW)   # Set GPIO PIN 16 to be
 
 TIMEOUT = 3
 WAIT_TIME = 1 # time to wait for soil chip to come online
+
+# this class manages reading values from the soil humidity sensor, it also manages the power to the sensor
+# so that it isn't left on all day
 class soilManager:
     def __init__(self):
         self.running = True
@@ -39,7 +47,8 @@ class soilManager:
 
     def terminate(self):
         self.running = False
-
+    
+    # we have to calibrate these values in the header for each sensor as their default values differ from unit to unit
     def getPercentHumidity(self, reading):
         ## this is a little confusing because we are using negative numbers because higher values
         ## means more resistance which means it's less humid so we need to invert our percentage range

@@ -3,7 +3,9 @@
 from time import sleep     # Import the sleep function from the time module
 import threading
 
-#GPIO.setmode(GPIO.BCM) # only need to set for testing
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
 
 LED_PIN = 21  # the choses GPIO 21/physical pin 40, for blinking our LED
 #GPIO.setwarnings(False)    # Ignore warning for now

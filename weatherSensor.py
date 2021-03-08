@@ -1,6 +1,7 @@
 # imports to get the Bosch atmospheric sensor working
 # All of the functions are simple enough to not wrap in a class
 
+
 import board
 import busio
 import adafruit_bme280

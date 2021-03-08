@@ -5,6 +5,10 @@
 # for CSS 532 at UW Bothell
 # testing file use to measure the averge latency from time sent to time received
 
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
+
 import os
 import argparse
 from awscrt import io, mqtt, auth, http

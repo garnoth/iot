@@ -3,7 +3,11 @@
 
 # major modifications made by Peter Van Eenoo
 # for CSS 532 at UW Bothell
-# testing file use to measure the averge latency from time sent to time received
+# testing file use to iterate through a client node's sensors and request data from them in a loop to simulate a high-workload 
+
+# Author: Peter Van Eenoo
+# CSS 532 IoT - class project
+# March 2021
 
 import os
 import argparse
@@ -90,7 +94,6 @@ global CONNECTED
 msgEvent = threading.Event()
 
 
-
 # the list of supported actions our device will response to
 SUPPORTED_ACTIONS = ['get','set', 'setTime', 'deviceState']
 
@@ -102,7 +105,7 @@ def supportedAction(payload):
     return action in SUPPORTED_ACTIONS
 
 
-global coll
+global coll # our list for collecting the latency value
 # Callback when the subscribed topic receives a message
 def receive_loop(topic, payload, **kwargs):
     payload=json.loads(payload)
@@ -120,19 +123,6 @@ def receive_loop(topic, payload, **kwargs):
 
 ## Sensor data retrieval functions ## 
 #####################################
-
-## this function gathers all availble sensor data and device status information and sends in one
-## pre-formatted message
-def getBulk(topic):
-    msg = {}
-    msg.update(getTemp())
-    msg.update(getHumidity())
-    msg.update(getAltitude())
-    msg.update(getPressure())
-    msg.update(getLEDStatus())
-    msg.update(getSoilHumidity())
-    if msg:
-        composeMessage(topic, msg)
 
 
 # Appends a message to the outbox queue which will be sent later by the main loop
@@ -222,6 +212,7 @@ if __name__ == '__main__':
     msg['get'] = 'value'
     pp = json.dumps(msg)
     i = 0
+    # the supported topics for each device we are testing
     devices=['temp','pressure','humidity', 'altitude', 'soil', 'water', 'led']
     
 
